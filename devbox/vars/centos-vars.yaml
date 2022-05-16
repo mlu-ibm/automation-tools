@@ -1,0 +1,9 @@
+# Ansible variables for dev box 
+#
+base_packages:
+  - git
+  - wget
+  - curl
+
+dev_package:
+  - gcc
