@@ -1,0 +1,131 @@
+---
+  - name: "Set up Dev Box"
+    hosts: localhost
+    connection: local
+    become: yes
+
+    tasks:
+
+    - name: download vars from Github
+      uri: 
+        url: https://raw.githubusercontent.com/mlu-ibm/automation-tools/main/devbox/vars/centos-vars.yaml
+        return_content: yes
+      register: download_vars
+
+    - name: decode vars yaml file
+      set_fact:
+        dev_vars: "{{download_vars.content | from_yaml}}"
+
+    - name: install packages
+      package:
+        name: "{{dev_vars.base_packages}}"
+        state: present
+
+    - name: configure auto update
+      lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: 'upgrade_type = default'
+        line: 'upgrade_type = security'
+        
+    - name: configure auto update
+      lineinfile:
+        path: /etc/dnf/automatic.conf
+        regexp: 'apply_update = no'
+        line: 'apply_update = yes'
+      notify: Restart dnf-automatic
+        
+    - name: configure auto update
+      replace:
+        path: /etc/dnf/automatic.conf
+        regexp: 'example.com'
+        replace: "{{ansible_fqdn}}"
+
+    - name: enable auto update
+      service:
+        name: dnf-automatic.timer
+        state: started
+        
+    - name: configure SSH daemon
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^[(#)|(# )]?PasswordAuthentication [(yes)|(no)]+$'
+        line: 'PasswordAuthentication no'
+      notify: Restart SSHD
+
+    - name: install python modules
+      pip:
+        name: docker
+        executable: pip3
+
+    - name: unzip install go
+      unarchive:
+        src: "https://golang.org/dl/go{{ dev_vars.go_version }}.linux-amd64.tar.gz"
+        dest: "/usr/local"
+        remote_src: true
+        creates: "/usr/local/go"
+        mode: '0755'
+
+    - name: update PATH
+      copy: 
+        content: export PATH=$PATH:/usr/local/go/bin
+        dest: /etc/profile.d/go.sh
+
+    - name: install AWS CLI
+      unarchive: 
+        src: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+        dest: "/tmp" 
+        remote_src: true
+        creates: "/tmp/aws"
+        mode: 0755
+
+    - name: run AWS CLI installer
+      command:
+      args:
+        cmd: "/tmp/aws/install"
+        creates: /usr/local/bin/aws
+      become: true
+      register: aws_install
+
+    - name: show installer output
+      debug: 
+        var: aws_install
+
+    - name: install kind
+      get_url:
+        url: "https://kind.sigs.k8s.io/dl/v{{dev_vars.kind_version}}/kind-linux-amd64"
+        dest: /usr/local/bin/kind
+        mode: '0755'
+        
+
+    - name: install kubectl
+      get_url:
+        url: "https://dl.k8s.io/release/v{{ dev_vars.kubectl_version }}/bin/linux/amd64/kubectl"
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    - name: install helm3
+      unarchive: 
+        src: "https://get.helm.sh/helm-v3.9.0-rc.1-linux-amd64.tar.gz"
+        dest: "/tmp"
+        creates: "/tmp/linux-amd64"
+        remote_src: true
+        mode: 0755
+
+    - name: copy helm to destination
+      copy:
+        src: "/tmp/linux-amd64/helm"
+        dest: "/usr/local/bin/helm"
+        mode: 0755
+        
+
+    handlers:
+      - name: Restart SSHD
+        service:
+          name: sshd
+          state: restarted
+
+      - name: Restart dnf-automatic
+        service:
+          name: dnf-automatic.timer
+          start: restarted
+

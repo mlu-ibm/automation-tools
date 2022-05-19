@@ -7,3 +7,7 @@ base_packages:
 
 dev_package:
   - gcc
+
+go_version: 1.18.2
+kind_version: 0.13.0
+kubectl_version: 1.24.0
